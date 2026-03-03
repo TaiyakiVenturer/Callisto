@@ -1,0 +1,51 @@
+# =====================
+# 環境變數
+# =====================
+.env
+.env.*
+!.env.example
+*.local
+
+# =====================
+# Node / 依賴
+# =====================
+node_modules/
+
+# =====================
+# 建置輸出
+# =====================
+dist/
+dist-ssr/
+
+# =====================
+# 測試 / 覆蓋率
+# =====================
+coverage/
+__screenshots__/
+
+# Cypress
+/cypress/videos/
+/cypress/screenshots/
+
+# =====================
+# TypeScript
+# =====================
+*.tsbuildinfo
+
+# =====================
+# Lint / Cache
+# =====================
+.eslintcache
+eslint.config.ts
+
+# =====================
+# Logs
+# =====================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+frontend/public/character-thinking_backup.png

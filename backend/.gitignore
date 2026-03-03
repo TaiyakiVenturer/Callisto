@@ -1,0 +1,58 @@
+# =====================
+# Python
+# =====================
+__pycache__/
+*.py[oc]
+*.pyo
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Coverage / testing
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Tests
+tests/
+
+# Python version managers
+.python-version
+
+# uv
+uv.lock
+
+# 個人設定檔（請參考 config.example.yaml 建立）
+config.yaml
+
+# Logs
+*.log
+logs/
+
+# =====================
+# Model files（大型二進位檔，建議用 Git LFS）
+# =====================
+models/*.onnx
+models/*.vrm
+models/*.vroid
+!models/silero_vad.onnx
+
+# =====================
+# 測試音檔
+# =====================
+test_audio

@@ -1,0 +1,48 @@
+server:
+  # 伺服器綁定位址：0.0.0.0 = 接受所有來源（含區網）；localhost = 僅本機
+  host: "0.0.0.0"
+  port: 8000
+  reload: false
+
+kws:
+  # 喚醒詞模型名稱列表（對應 models/ 資料夾下的 .onnx 檔名，不含副檔名，支援同時檢測多個模型）
+  wake_words:
+    - "Your wake word model name here"
+    - "Another wake word model name here"
+
+tts:
+  # GPT-SoVITS API server 的位址與端口
+  host: "localhost"
+  port: 9880
+  sample_rate: 32000  # V2: 32000, V3/V4: 24000 or 48000
+  # GPT-SoVITS 參考音檔的絕對路徑，例如 "C:/path/to/your/voice.wav"
+  voice: ""
+  # 參考音檔對應的文字內容
+  prompt_text: "Your prompt text here"
+  prompt_lang: "zh"
+  streaming_mode: 2
+  batch_size: 1
+
+stt:
+  # faster-whisper 模型大小：tiny / base / small / medium / large / turbo
+  model_size: "turbo"
+  # 運算裝置：cuda（需要 NVIDIA GPU）/ cpu
+  device: "cuda"
+  # 運算精度：float16 / int8 / int8_float32 / float32
+  # GPU 建議 int8_float32；CPU 建議 int8
+  compute_type: "int8_float32"
+
+vmm:
+  # VTube Studio / VMM Protocol 連線設定
+  host: "localhost"
+  port: 39539
+
+llm:
+  # Groq 支援的模型 ID，例如 "llama-3.1-8b-instant"
+  model: "llama-3.1-8b-instant"
+  # 自訂 AI 的角色設定與行為規則
+  system_prompt: >
+    # 在此填入你的 system prompt
+    定義 AI 的個性、語氣與行為約束。
+  # Context window 保留的最大訊息數（不含system_prompt，1 = 一輪對話 user+assistant）
+  max_cache_length: 5 # 這裡設定為 5，表示最多保留最近 5 輪對話（共 10 條訊息）
