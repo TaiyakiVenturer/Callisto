@@ -7,37 +7,30 @@ from faster_whisper import WhisperModel
 import logging
 import os
 
+from config import load_config
+
 logger = logging.getLogger(__name__)
 
 
 class STTService:
     """語音轉文字服務"""
-    
-    def __init__(
-        self, 
-        model_size: str = "base",
-        device: str = "cpu",
-        compute_type: str = "int8"
-    ):
+
+    def __init__(self):
         """
-        初始化 STT 服務
-        
-        Args:
-            model_size: Whisper 模型大小 (tiny, base, small, medium, large)
-            device: 運算裝置 (cuda, cpu)
-            compute_type: 運算精度 (float16, int8, float32)
+        初始化 STT 服務，從 config.yaml [stt] 區塊讀取模型設定。
         """
-        self.model_size = model_size
-        self.device = device
-        self.compute_type = compute_type
+        config = load_config()["stt"]
+        self.model_size = config["model_size"]
+        self.device = config["device"]
+        self.compute_type = config["compute_type"]
         
-        logger.info(f"載入 Whisper 模型: {model_size} on {device} ({compute_type})")
+        logger.info(f"載入 Whisper 模型: {self.model_size} on {self.device} ({self.compute_type})")
         
         try:
             self.model = WhisperModel(
-                model_size,
-                device=device,
-                compute_type=compute_type
+                self.model_size,
+                device=self.device,
+                compute_type=self.compute_type
             )
             logger.info("Whisper 模型載入完成")
         except Exception as e:

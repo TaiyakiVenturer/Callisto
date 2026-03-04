@@ -3,13 +3,16 @@ from pythonosc import udp_client
 from typing import Literal
 import logging
 
+from config import load_config
+
 # 設定日誌
 logger = logging.getLogger(__name__)
 
 class VMMController:
     """負責傳送VMM訊號的控制類別"""
-    def __init__(self, ip: str = "127.0.0.1", port: int = 39539):
-        self.client = udp_client.SimpleUDPClient(ip, port)
+    def __init__(self):
+        config = load_config()["vmm"]
+        self.client = udp_client.SimpleUDPClient(config["host"], config["port"])
 
         self.last_expression_time = None
 

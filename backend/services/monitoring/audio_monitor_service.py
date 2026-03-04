@@ -64,7 +64,7 @@ class AudioMonitorService:
         
         # 初始化 VAD 和 KWS 服務
         logger.info("正在初始化 AudioMonitorService...")
-        self.vad_service = SileroVADService(threshold=vad_threshold)
+        self.vad_service = SileroVADService()
         
         # 直接創建 KWS 實例
         self.kws_service = KeywordSpottingService(

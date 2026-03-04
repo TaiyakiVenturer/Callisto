@@ -32,6 +32,12 @@ stt:
   # GPU 建議 int8_float32；CPU 建議 int8
   compute_type: "int8_float32"
 
+vad:
+  # 語音活動檢測閾值（0.0-1.0），越低越敏感，建議 0.3-0.5
+  threshold: 0.35
+  # 是否啟用自動增益控制（AGC），在麥克風音量不穩定時建議開啟
+  enable_agc: true
+
 vmm:
   # VTube Studio / VMM Protocol 連線設定
   host: "localhost"

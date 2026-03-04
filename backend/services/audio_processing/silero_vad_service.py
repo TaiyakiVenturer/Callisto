@@ -22,17 +22,9 @@ class SileroVADService:
     - 低延遲（<10ms）
     - 高準確率（>90%）
     """
-    
-    # Silero VAD ONNX 模型下載 URL
-    # 手動下載: https://huggingface.co/onnx-community/silero-vad/blob/main/onnx
-    # 下載 model.onnx 並重命名為 silero_vad.onnx 放到 backend/models/ 目錄
-    MODEL_URL = "https://huggingface.co/onnx-community/silero-vad/blob/main/onnx/model.onnx"
-    
     def __init__(
         self,
-        threshold: float = 0.5,
         sample_rate: int = 16000,
-        enable_agc: bool = False,
         target_rms_db: float = -15.0,
         limiter_threshold_db: float = -3.0,
         max_gain_db: float = 60.0,
@@ -41,24 +33,25 @@ class SileroVADService:
     ):
         """
         初始化 Silero VAD 服務
-        
+
+        threshold 和 enable_agc 從 config.yaml [vad] 讀取。
+        其餘 AGC 細部參數維持預設值，如需調整請直接傳入。
+
         Args:
-            threshold: 語音檢測閾值（0.0-1.0），預設 0.5
-                      - 較低值：更敏感，可能誤判噪音為語音
-                      - 較高值：更保守，可能漏檢輕聲語音
             sample_rate: 音訊採樣率，預設 16000 Hz
-            enable_agc: 是否啟用 AGC 自動增益控制，預設 False
-            target_rms_db: AGC 目標 RMS 音量（dBFS），預設 -18.0
+            target_rms_db: AGC 目標 RMS 音量（dBFS），預設 -15.0
             limiter_threshold_db: 限幅器閾值（dBFS），預設 -3.0
-            max_gain_db: 最大增益（dB），預設 20.0
+            max_gain_db: 最大增益（dB），預設 60.0
             smoothing_factor: 增益平滑係數（0-1），預設 0.1
-            noise_gate_db: 噪音門限（dBFS），低於此值不應用 AGC，預設 -50.0
+            noise_gate_db: 噪音門限（dBFS），低於此值不應用 AGC，預設 -70.0
         """
-        self.threshold = threshold
+        from config import load_config
+        _vad_cfg = load_config()["vad"]
+        self.threshold = _vad_cfg["threshold"]
+        self.enable_agc = _vad_cfg["enable_agc"]
         self.sample_rate = sample_rate
-        
+
         # AGC 參數
-        self.enable_agc = enable_agc
         self.target_rms_db = target_rms_db
         self.limiter_threshold_db = limiter_threshold_db
         self.max_gain_db = max_gain_db
@@ -68,8 +61,8 @@ class SileroVADService:
         # AGC 狀態
         self.current_gain_db = 0.0
         
-        # 下載並載入 ONNX 模型
-        model_path = self._ensure_model_downloaded()
+        # 確保模型存在並載入
+        model_path = self._ensure_model_exist()
         
         # 初始化 ONNX Runtime Session（僅使用 CPU）
         logger.info("正在載入 Silero VAD ONNX 模型...")
@@ -81,11 +74,11 @@ class SileroVADService:
         # 初始化模型狀態（h 和 c 是 LSTM 的隱藏狀態）
         self._reset_states()
         
-        logger.info(f"✅ Silero VAD 服務已啟動（閾值: {threshold}, 採樣率: {sample_rate} Hz）")
+        logger.info(f"✅ Silero VAD 服務已啟動（閾值: {self.threshold}, 採樣率: {self.sample_rate} Hz）")
     
-    def _ensure_model_downloaded(self) -> str:
+    def _ensure_model_exist(self) -> str:
         """
-        確保 ONNX 模型已下載
+        確保 ONNX 模型已存在
         
         Returns:
             模型檔案的絕對路徑
@@ -100,23 +93,8 @@ class SileroVADService:
         model_path = models_dir / "silero_vad.onnx"
         
         if model_path.exists():
-            logger.info(f"使用現有模型: {model_path}")
             return str(model_path)
-        
-        # 下載模型
-        logger.info(f"正在下載 Silero VAD 模型從: {self.MODEL_URL}")
-        try:
-            response = requests.get(self.MODEL_URL, timeout=60)
-            response.raise_for_status()
-            
-            model_path.write_bytes(response.content)
-            logger.info(f"✅ 模型下載完成: {model_path}")
-            
-        except Exception as e:
-            logger.error(f"❌ 模型下載失敗: {e}")
-            raise RuntimeError(f"無法下載 Silero VAD 模型: {e}")
-        
-        return str(model_path)
+        raise FileNotFoundError(f"Silero VAD 模型未找到: {model_path}，請確保已下載模型且正確放置")
     
     def _reset_states(self):
         """重置 LSTM 隱藏狀態"""

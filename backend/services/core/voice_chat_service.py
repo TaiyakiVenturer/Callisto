@@ -42,35 +42,23 @@ class VoiceChatService:
     def __init__(self):
         """初始化服務（只執行一次）"""
         logger.info("創建 VoiceChatService 實例")
-        config = load_config()
-        
         # 狀態
         self.app_state = AppState()
 
-        self.vad_service = SileroVADService(threshold=0.35, enable_agc=True)
+        self.vad_service = SileroVADService()
         self.groq_client = Groq()
 
-        self.tts_client = GPTSoVITSV2Client(
-            base_url=f"http://{config['tts']['host']}:{config['tts']['port']}",
-            sample_rate=config["tts"]["sample_rate"],
-        )
-        self.vmm_service = VMMController(
-            ip=config["vmm"]["host"],
-            port=config["vmm"]["port"],
-        )
+        self.tts_client = GPTSoVITSV2Client()
+        self.vmm_service = VMMController()
         self.avatar_service = AvatarController(self.tts_client, self.vmm_service)
 
         self.memory_cache = MemoryCache()
         self.opencc = OpenCC('s2twp')
 
-        self.llm_model: str = config["llm"]["model"]
+        self.llm_model: str = load_config()["llm"]["model"]
 
         try:
-            self.stt_service = STTService(
-                model_size=config["stt"]["model_size"],
-                device=config["stt"]["device"],
-                compute_type=config["stt"]["compute_type"],
-            )
+            self.stt_service = STTService()
         except Exception as e:
             logger.error(f"STT 服務初始化失敗: {e}")
             raise

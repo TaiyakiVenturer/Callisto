@@ -55,18 +55,15 @@ class GPTSoVITSV2Client:
         sample_rate: Audio sampling rate
     """
     
-    def __init__(self, base_url: str = "http://127.0.0.1:9880", sample_rate: int = 32000):
+    def __init__(self):
         """
         Initialize the GPT-SoVITS V2 TTS client.
-        
-        Args:
-            base_url: Base URL of the GPT-SoVITS server
-            sample_rate: Audio sample rate (32000 for V2, 24000/48000 for V3/V4)
+        Reads base_url, sample_rate and all TTS params from config.yaml [tts] block.
         """
-        self.base_url = base_url.rstrip('/')
+        self.config = load_config()["tts"]
+        self.base_url = f"http://{self.config['host']}:{self.config['port']}"
         self.tts_endpoint = "/tts"
-        self.sample_rate = sample_rate
-        self.config = load_config()
+        self.sample_rate = self.config["sample_rate"]
     
     def generate_stream(
         self,
@@ -109,22 +106,22 @@ class GPTSoVITSV2Client:
         if not text or not text.strip():
             raise ValueError("Text cannot be empty")
         
-        if not self.config["tts"]["voice"]:
+        if not self.config["voice"]:
             raise ValueError("Voice (reference audio path) cannot be empty")
         
-        if not self.config["tts"]["prompt_text"] or not self.config["tts"]["prompt_text"].strip():
+        if not self.config["prompt_text"] or not self.config["prompt_text"].strip():
             raise ValueError("Prompt text cannot be empty")
         
         # Build the request payload for V2 API
         payload = {
             "text": text,
             "text_lang": language,
-            "ref_audio_path": self.config["tts"]["voice"],
-            "prompt_text": self.config["tts"]["prompt_text"],
-            "prompt_lang": self.config["tts"]["prompt_lang"],
+            "ref_audio_path": self.config["voice"],
+            "prompt_text": self.config["prompt_text"],
+            "prompt_lang": self.config["prompt_lang"],
             "media_type": "raw",  # PCM format for streaming
-            "streaming_mode": self.config["tts"]["streaming_mode"],
-            "batch_size": self.config["tts"]["batch_size"],
+            "streaming_mode": self.config["streaming_mode"],
+            "batch_size": self.config["batch_size"],
             "parallel_infer": True
         }
         

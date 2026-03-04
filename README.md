@@ -80,7 +80,7 @@ cp .env.example .env
 # 若後端 port 不同，修改 .env 裡的 VITE_API_BASE_URL
 
 # 啟動開發伺服器
-pnpm dev --host
+pnpm dev
 ```
 
 前端將在 `http://localhost:5173` 啟動
@@ -216,7 +216,7 @@ Callisto/
 |------|------|
 | `/ws/voice-monitor` | 即時音訊串流監聽，支援 VAD + KWS 喚醒詞檢測 |
 
-詳細請參考 [backend/README.md](backend/README.md)
+詳細請參考 [後端詳細說明](docs/Backend%20README.md)
 
 ## 🤝 貢獻
 

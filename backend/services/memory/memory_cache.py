@@ -16,9 +16,9 @@ class MemoryCache:
     """Context Window 管理，維護對話歷史並支援 Tool Calling 訊息格式。"""
 
     def __init__(self):
-        config = load_config()
-        self._system_prompt: str = config["llm"]["system_prompt"]
-        self.max_len: int = 1 + config["llm"]["max_cache_length"] * 2  # 1 (system) + N * (user + assistant)
+        config = load_config()["llm"]
+        self._system_prompt: str = config["system_prompt"]
+        self.max_len: int = 1 + config["max_cache_length"] * 2  # 1 (system) + N * (user + assistant)
         self.chat_history: list[dict] = [
             {"role": "system", "content": self._system_prompt}
         ]

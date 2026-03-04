@@ -3,6 +3,7 @@ FastAPI 應用主程式
 提供語音對話 API 服務
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -33,8 +34,19 @@ for handler in logging.root.handlers:
         
 logger = logging.getLogger(__name__)
 
+# 語音對話服務（於 lifespan 初始化，避免模組二次 import 時重複建立）
+voice_service: Optional[VoiceChatService] = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global voice_service
+    voice_service = VoiceChatService()
+    yield
+
+
 # 建立 FastAPI 應用
-app = FastAPI(title="Callisto Voice API")
+app = FastAPI(title="Callisto Voice API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # 本機開發，允許所有來源
@@ -42,9 +54,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# 初始化語音對話服務
-voice_service = VoiceChatService()
 
 
 # Response Models
@@ -63,6 +72,7 @@ class UploadResponse(BaseModel):
 
 @app.post("/api/chat/text", response_model=UploadResponse)
 def upload_text(text: str):
+    """測試用端點：直接傳送文字並獲取回應（模擬語音轉文字後的流程）"""
     voice_service.generate_response(text)
 
     return UploadResponse(
