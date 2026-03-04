@@ -39,16 +39,140 @@ vad:
   enable_agc: true
 
 vmm:
-  # VTube Studio / VMM Protocol 連線設定
+  # VMagicMirror OSC 連線設定
   host: "localhost"
   port: 39539
+  # VMM 表情控制說明：
+  #   系統會解析 LLM 回應中的 [EXP: 表情名稱] 標籤，並透過 OSC 傳送給 VMagicMirror。
+  #   標籤不會被 TTS 唸出，會在送往語音合成前自動移除。
+  #   你必須在 system_prompt 中告訴 LLM 使用此格式，VMM 表情才會有變化。
+  #
+  #   可用表情（VMagicMirror 預設 BlendShape 名稱）：
+  #     Neutral   - 無表情（預設）
+  #     Joy       - 開心
+  #     Angry     - 憤怒
+  #     Sorrow    - 悲傷
+  #     Fun       - 有趣/逗樂
+  #     Surprised - 驚訝
 
 llm:
   # Groq 支援的模型 ID，例如 "llama-3.1-8b-instant"
   model: "llama-3.1-8b-instant"
-  # 自訂 AI 的角色設定與行為規則
-  system_prompt: >
-    # 在此填入你的 system prompt
-    定義 AI 的個性、語氣與行為約束。
-  # Context window 保留的最大訊息數（不含system_prompt，1 = 一輪對話 user+assistant）
-  max_cache_length: 5 # 這裡設定為 5，表示最多保留最近 5 輪對話（共 10 條訊息）
+  # 自訂 AI 的角色設定與行為規則。
+  #
+  # ─── VMM 表情控制（重要）─────────────────────────────────────────────────
+  # 若要讓 VMagicMirror 虛擬形象顯示表情，你必須在 system_prompt 中
+  # 要求 LLM 在每句回應的開頭加上以下格式的標籤：
+  #
+  #   [EXP: 表情名稱]
+  #
+  # 可用表情名稱（大小寫需完全一致）：
+  #   Neutral / Joy / Angry / Sorrow / Fun / Surprised
+  #
+  # 範例指令（加入 system_prompt）：
+  #   「每次回應都必須以 [EXP: 表情名稱] 開頭，
+  #    表情從 Neutral、Joy、Angry、Sorrow、Fun、Surprised 中選一個，
+  #    標籤後接空格再寫回應內容。」
+  #
+  # 輸出範例：
+  #   [EXP: Joy] 這個問題還算有點意思。
+  #   [EXP: Sorrow] 你連這個都不知道？
+  #
+  # 若 LLM 沒有輸出標籤，或輸出了列表外的名稱，系統會 fallback 為 Neutral。
+  # ──────────────────────────────────────────────────────────────────────────
+  system_prompt: |
+    # 在此填入你的 system prompt，並加入上方說明的 [EXP:] 標籤規則。
+    定義 AI 的個性、語氣與行為約束。每次回應開頭必須加上 [EXP: 表情名稱] 標籤。
+  # 保留幾輪「真實對話」（user + assistant 有內容的回覆）。
+  # Tool calling 中繼訊息（assistant tool_calls 步驟、tool 結果）不計入此數字。
+  # 建議值：不使用 tool calling → 8-12；使用 tool calling（如記憶檢索）→ 5-8。
+  # （tool calling 每輪多出 assistant tool_calls 步驟 + tool 結果訊息，context 消耗更大）
+  # ⚠ 注意：context window 大小 ≈ system_prompt token 數 + retrieval 注入 token 數
+  #         + max_cache_length × 每輪平均 token 數 + tool calling overhead
+  #   Groq llama-3.1-8b-instant 上限 128k token，實務建議不要超過 30k，
+  #   避免長 context 對 8B 模型的精度下降（壓縮功能正在開發中）。
+  max_cache_length: 5
+
+memory:
+  llm:
+    # 用於判斷對話是否値得保存的 Groq 模型，建議使用能力較強的模型以提高記憶質量
+    writer_model: "llama-3.3-70b-versatile"
+    writer_temperature: 0.2
+    # ⚠️  警告：此 prompt 規則與欄位說明區塊與記憶 DB schema 強耦合（topic/summary/keywords/content 欄位）。
+    # 若隨意修改，MemoryWriter 解析 JSON 將失敗，記憶寫入將靜默跳過。
+    # 修改前請確認你理解 memory_writer.py 的執行流程，後果自行負責。
+    #
+    # 💡 「範例」區塊相對自由，可依照你的 assistant 實際對話風格新增或替換範例。
+    #    建議至少保留「邊緣 save（跨輪次才明確的習慣）」與「邊緣 skip（一次性念頭）」各一個，
+    #    範例越貼近實際語氣，模型判斷越準確。
+    writer_system_prompt: |
+      你是記憶評估與提取者。分析以下多輪對話批次（格式：[Turn N]\nUser: ...\nAssistant: ...），綜合整批內容以 JSON 格式輸出結果。
+      若輸入中含有 [EXP: X] 等語氣標記，請將其視為語氣提示，聚焦對話的語意內容進行判斷。
+
+      規則：
+      1. 若這批對話整體包含「個人習慣、具體技術知識、重要事件、個人偏好、使用者明確委託記憶或提醒的待辦事項」任一項：
+         輸出 {"save": true, "topic": "...", "summary": "...", "keywords": "...", "content": "..."}
+      2. 若整批均為一般閒聊、計算、即時問答：
+         只輸出 {"save": false}
+
+      欄位說明（save=true 時必填）：
+      - topic: 英文小寫+底線的主題 slug，如 sql_optimization
+      - summary: 1-2句繁體中文摘要，說明這批記憶的核心主題
+      - keywords: 逗號分隔關鍵字，最多5個，繁體中文，用於搜尋
+      - content: 完整知識內容，繁體中文，可多行，應整合這批對話的關鍵資訊
+
+      範例：
+
+      [範例 1 — 邊緣 save，跨輪次才明確的長期習慣]
+      輸入：
+      [Turn 1]
+      User: 我不太習慣用滑鼠
+      Assistant: 了解，有些人更喜歡鍵盤操作。
+      [Turn 2]
+      User: 所以我 vim 用了很多年了，快捷鍵背得很熟
+      Assistant: 那你在終端機環境下應該很有效率。
+      輸出：{"save": true, "topic": "user_vim_preference", "summary": "使用者長期使用 vim，習慣鍵盤操作，不習慣滑鼠", "keywords": "vim,鍵盤,習慣,編輯器", "content": "使用者長期使用 vim 編輯器，已熟練快捷鍵，偏好鍵盤操作，不習慣使用滑鼠。"}
+
+      [範例 2 — 邊緣 skip，一次性念頭而非習慣]
+      輸入：
+      [Turn 1]
+      User: 我今天想試試看用 neovim
+      Assistant: neovim 相比 vim 有更好的 plugin 生態，可以試試 lazy.nvim。
+      輸出：{"save": false}
+
+      [範例 3 — 邊緣 save，待辦委託混在閒聊中]
+      輸入：
+      [Turn 1]
+      User: 最近天氣有點冷
+      Assistant: 天氣確實變涼了，多穿點吧。
+      [Turn 2]
+      User: 這沒辦法嗎 最近真的有點冷
+      Assistant: 穿衣服就好啊。
+      [Turn 3]
+      User: 那你記得提醒我最近去買外套
+      Assistant: 好，我記住了，你需要去買一件外套。
+      輸出：{"save": true, "topic": "user_todo_buy_coat", "summary": "使用者要求 Agent 記住提醒他去買外套", "keywords": "外套,買衣服,提醒,待辦", "content": "使用者在天氣變冷時要求 Callisto 記住提醒他去買外套。"}
+
+  forgetting:
+    lambda_decay: 0.05    # 衰減速率；days=14 時 decay ≈ 0.5
+    scale: 3              # access_count 標準化基準；access_count=10 時 boost=1.0
+    compress_threshold: 0.3
+    delete_threshold: 0.1
+
+  embedding:
+    # Ollama embedding 服務連線設定，需先安裝 Ollama 並拉取對應模型
+    host: "localhost"
+    port: 11434
+    model: "Embedding model name here"  # 例如 "text-embedding-3-small"
+    timeout: 10.0
+
+  retrieval:
+    rrf_k: 60          # RRF 常數，建議 60
+    default_top_k: 3   # 預設回傳記憶筆數
+    write_interval: 3  # 每幾輪對話触發一次記憶寫入；數字越小越高頻（最小 1 = 每輪都寫）
+
+  storage:
+    # SQLite DB 路徑（相對於 backend/ 資料夾）
+    db_url: "sqlite:///data/memory.db"
+    # ChromaDB 持久化路徑（相對於 backend/ 資料夾）
+    chroma_persist_dir: "./data/chroma_db"

@@ -35,13 +35,17 @@ for handler in logging.root.handlers:
 logger = logging.getLogger(__name__)
 
 # 語音對話服務（於 lifespan 初始化，避免模組二次 import 時重複建立）
-voice_service: Optional[VoiceChatService] = None
+chat_service: Optional[VoiceChatService] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global voice_service
-    voice_service = VoiceChatService()
+    global chat_service
+    chat_service = VoiceChatService()
+    try:
+        result = chat_service.forgetting_service.run_cycle()
+    except Exception as e:
+        logger.warning(f"Forgetting cycle failed (non-critical): {e}")
     yield
 
 
@@ -73,11 +77,11 @@ class UploadResponse(BaseModel):
 @app.post("/api/chat/text", response_model=UploadResponse)
 def upload_text(text: str):
     """測試用端點：直接傳送文字並獲取回應（模擬語音轉文字後的流程）"""
-    voice_service.generate_response(text)
+    chat_service.generate_response(text)
 
     return UploadResponse(
         status="processing",
-        message="\n".join(message for message in voice_service.memory_cache.show_history())
+        message="\n".join(message for message in chat_service.memory_cache.show_history())
     )
 
 
@@ -104,7 +108,7 @@ async def upload_voice(
             )
         
         # 檢查是否正在處理中
-        if not voice_service.app_state.is_done:
+        if not chat_service.app_state.is_done:
             raise HTTPException(
                 status_code=409,
                 detail="正在處理中，請稍後再試"
@@ -135,7 +139,7 @@ async def upload_voice(
         logger.info(f"音訊檔案已儲存: {audio_path} (格式: {audio.content_type})")
         
         # 啟動背景任務處理語音對話（格式轉換在 service 層處理）
-        background_tasks.add_task(voice_service.process_voice, audio_path)
+        background_tasks.add_task(chat_service.process_voice, audio_path)
         
         return UploadResponse(
             status="processing",
@@ -163,7 +167,7 @@ async def voice_monitor_endpoint(websocket: WebSocket):
     """
     await websocket.accept()
     
-    service = VoiceMonitorWebSocketService(websocket, voice_service)
+    service = VoiceMonitorWebSocketService(websocket, chat_service)
     try:
         await service.start()
         await service.handle_audio_stream()
@@ -192,7 +196,7 @@ async def get_status():
     Returns:
         處理狀態、轉換文字、AI 回應、player 狀態
     """
-    status = voice_service.get_status()
+    status = chat_service.get_status()
     return StatusResponse(**status)
 
 
@@ -212,7 +216,7 @@ async def root():
     # 檢查 Groq API 連線
     try:
         # 使用 models.list() 檢查連線，不消耗請求次數
-        models = voice_service.groq_client.models.list()
+        models = chat_service.groq_client.models.list()
         model_list = [model.id for model in models.data]
         health_status["services"]["groq"] = {
             "status": "connected",
@@ -229,11 +233,11 @@ async def root():
     # 檢查 TTS 服務連線
     try:
         import requests
-        tts_response = requests.get(f"{voice_service.tts_client.base_url}/api/ready", timeout=2)
+        tts_response = requests.get(f"{chat_service.tts_client.base_url}/api/ready", timeout=2)
         if tts_response.status_code == 200:
             health_status["services"]["tts"] = {
                 "status": "connected",
-                "url": voice_service.tts_client.base_url
+                "url": chat_service.tts_client.base_url
             }
         else:
             health_status["services"]["tts"] = {
@@ -249,7 +253,7 @@ async def root():
         health_status["status"] = "degraded"
     
     # 檢查 STT 服務狀態（只檢查是否已載入）
-    stt = voice_service.stt_service
+    stt = chat_service.stt_service
     health_status["services"]["stt"] = {
         "status": "loaded" if stt is not None else "not_loaded",
         "model": f"faster-whisper {stt.model_size} ({stt.compute_type}) on {stt.device}" if stt else None
@@ -257,9 +261,9 @@ async def root():
     
     # 檢查處理狀態
     health_status["processing"] = {
-        "is_done": voice_service.app_state.is_done,
-        "has_error": voice_service.app_state.error is not None,
-        "status": "idle" if voice_service.app_state.is_done else "processing"
+        "is_done": chat_service.app_state.is_done,
+        "has_error": chat_service.app_state.error is not None,
+        "status": "idle" if chat_service.app_state.is_done else "processing"
     }
     
     return health_status

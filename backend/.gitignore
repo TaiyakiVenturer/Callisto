@@ -56,3 +56,6 @@ models/*.vroid
 # 測試音檔
 # =====================
 test_audio
+
+# Data files
+data/

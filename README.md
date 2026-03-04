@@ -9,6 +9,7 @@
 - 🔊 **即時回應**：GPT-SoVITS V2 語音合成，非阻塞串流播放
 - 💬 **雙模式**：按鈕錄音 / 持續監聽（喚醒詞觸發）
 - 🎭 **虛擬形象**：透過 VMagicMirror（VMM）驅動 VRM 3D 模型；前端目前以暫時圖像作 UI 狀態指示，未來規劃整體移除，僅保留後端控制面板介面
+- 🧠 **長期記憶**：FTS5 + ChromaDB 混合搜尋，LLM 自動判斷是否寫入，含遺忘機制
 - ⚡ **高效能**：ONNX Runtime CPU 友好推理，無需 GPU
 
 ## 🏗️ 技術架構
@@ -30,6 +31,7 @@
 - **LLM**：Groq API (llama-3.1-8b-instant)
 - **TTS**：GPT-SoVITS V2（本機部署）
 - **VMM**：pythonosc → VMagicMirror → VRM 3D 模型控制
+- **長期記憶**：SQLite/FTS5 + ChromaDB + Ollama Embedding + RRF 混合搜尋
 - **設定**：集中式 `config.yaml`
 
 ## 🚀 快速開始
@@ -112,14 +114,25 @@ Callisto/
 │   │   │   └── stt_service.py              # 語音轉文字 (faster-whisper)
 │   │   ├── core/               # 核心邏輯
 │   │   │   └── voice_chat_service.py       # 語音對話主服務
-│   │   ├── memory/             # 記憶管理
-│   │   │   └── memory_cache.py             # 對話記憶快取
+│   │   ├── memory/             # 長期記憶層
+│   │   │   ├── memory_cache.py             # Context Window 對話歷史管理
+│   │   │   ├── sql.py                      # SQLite + FTS5 記憶資料庫
+│   │   │   ├── vector_store.py             # ChromaDB 向量資料庫封裝
+│   │   │   ├── embedding_service.py        # Ollama embedding 抽象層
+│   │   │   ├── retrieval.py                # FTS5 + Vector 混合搜尋（RRF）
+│   │   │   ├── memory_writer.py            # LLM 判斷並寫入記憶
+│   │   │   └── forgetting.py               # 遺忘週期（壓縮 / 刪除）
 │   │   ├── monitoring/         # 監聽服務
 │   │   │   ├── audio_monitor_service.py    # VAD+KWS 協調服務
 │   │   │   └── voice_monitor_websocket_service.py  # WebSocket 音訊監聽
-│   │   └── visual/             # 形象控制
-│   │       ├── vmm_service.py              # VMagicMirror OSC 控制（表情）
-│   │       └── avatar_controller.py        # 虛擬形象狀態控制器
+│   │   ├── visual/             # 形象控制
+│   │   │   ├── vmm_service.py              # VMagicMirror OSC 控制（表情）
+│   │   │   └── avatar_controller.py        # 虛擬形象狀態控制器
+│   │   ├── tools.py                        # Groq tool schema 定義（search_memory）
+│   │   └── tool_calling_handler.py         # Tool calling 迴圈處理（解析 / 執行 / 回傳）
+│   ├── data/                   # 長期記憶資料（.gitignore 排除，勿上傳）
+│   │   ├── memory.db               # SQLite 記憶資料庫
+│   │   └── chroma_db/              # ChromaDB 向量索引
 │   ├── models/                 # ONNX 模型（大型檔案不上傳，僅 silero_vad.onnx 隨專案）
 │   │   └── silero_vad.onnx             # VAD 模型（已上傳）
 │   │   # 自訓喚醒詞模型請放於此目錄，並於 config.yaml 的 kws.wake_words 設定
@@ -127,8 +140,7 @@ Callisto/
 │   ├── config.py               # 集中式設定載入器
 │   ├── config.example.yaml     # 設定範本（複製為 config.yaml 使用）
 │   ├── .env.example            # 環境變數範本（複製為 .env，填入 API 金鑰）
-│   ├── pyproject.toml          # Python 專案設定 (uv)
-│   └── README.md               # 後端 API 詳細文檔
+│   └── pyproject.toml          # Python 專案設定 (uv)
 │
 ├── frontend/                   # 前端應用 (Vue 3 + TypeScript + Vite)
 │   ├── src/
@@ -153,6 +165,7 @@ Callisto/
 │   └── vite.config.ts
 │
 └── docs/
+    ├── Backend README.md       # 後端 API 詳細文檔
     └── specs/                  # 功能規格文檔
 ```
 
@@ -168,10 +181,18 @@ Callisto/
 - [x] **文字轉語音 (TTS)** - GPT-SoVITS V2 同步串流生成
 - [x] **AGC 自動增益控制** - 整合於 Silero VAD，可設定目標 RMS 與噪音門限
 - [x] **虛擬形象控制** - pythonosc → VMagicMirror → VRM 3D 模型（表情 OSC）
+- [x] **長期記憶層** - FTS5 + ChromaDB 混合搜尋，tool calling 自動注入，背景寫入，遺忘週期
 
 #### 後端架構
-- [x] **集中式設定** - `config.yaml` 管理所有連線參數、模型設定、系統提示
-- [x] **VoiceChatService** - 語音對話主服務，協調 STT / LLM / TTS / VMM 完整流程
+- [x] **集中式設定** - `config.yaml` 管理所有連線參數、模型設定、系統提示、few-shot prompt
+- [x] **VoiceChatService** - 語音對話主服務，協調 STT / LLM / TTS / VMM / 記憶層完整流程
+- [x] **MemoryCache** - 以真實對話輪數計算（tool calling 中繼訊息不計入），原子化 drop 整輪次
+- [x] **MemoryDB** - SQLite + FTS5 trigram 全文搜尋；`bump_access()` 於 Top-K 後更新存取統計
+- [x] **VectorStore** - ChromaDB 向量資料庫，以 `memory_id` 為主鍵與 SQLite 同步
+- [x] **EmbeddingService** - Ollama embedding 封裝，不可用時自動降級為純 FTS5
+- [x] **RetrievalService** - FTS5 + Vector RRF 混合搜尋，Graceful Degradation
+- [x] **MemoryWriter** - Groq LLM 判斷是否值得保存；topic 已存在則 upsert
+- [x] **ForgettingService** - 指數衰減分數，自動壓縮 / 刪除低頻記憶
 - [x] **AudioMonitorService** - VAD+KWS 協調服務（環形 buffer、cooldown 管理）
 - [x] **GPTSoVITSV2Client** - TTS 客戶端，含同步串流播放（sounddevice）
 - [x] **VoiceMonitorWebSocketService** - Producer-Consumer 架構，支援 monitoring / vad_only / idle 三模式
@@ -196,8 +217,6 @@ Callisto/
 - [ ] **喚醒詞回應音效** - 檢測到喚醒詞後立即播放提示音（「我有聽到，請說」）
 - [ ] **移除佔位圖片** - `CharacterDisplay.vue` 整體移除，改為純控制面板 UI
 - [ ] **Tauri 打包** - 前端遷移至 Tauri（Rust），打包為桌面 APP
-- [ ] **記憶功能整合** - 與 CallistoMemory 長期記憶系統串接
-- [ ] 多輪對話長期記憶持久化
 - [ ] 音量視覺化（錄音時顯示波形）
 
 ## 🎯 API 端點
@@ -226,4 +245,4 @@ Callisto/
 
 **專案名稱由來**：Callisto（木衛四），木星最外圈的大型衛星。
 
-**最後更新**：2026-03-04
+**最後更新**：2026-03-05

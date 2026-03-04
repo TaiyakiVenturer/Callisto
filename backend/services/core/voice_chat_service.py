@@ -3,9 +3,11 @@
 處理 VAD → STT → LLM → TTS 的完整流程
 """
 
+import json
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 from groq import Groq
 from dotenv import load_dotenv
@@ -17,6 +19,14 @@ from services.audio_processing.gpt_sovits_service import GPTSoVITSV2Client
 from services.visual.vmm_service import VMMController
 from services.visual.avatar_controller import AvatarController
 from services.memory.memory_cache import MemoryCache
+from services.memory.sql import MemoryDB
+from services.memory.embedding_service import EmbeddingService
+from services.memory.vector_store import VectorStore
+from services.memory.retrieval import RetrievalService
+from services.memory.memory_writer import MemoryWriter
+from services.memory.forgetting import ForgettingService
+from services.tools import get_tools
+from services.tool_calling_handler import ToolCallingHandler
 from config import load_config
 
 # 載入環境變數
@@ -56,6 +66,18 @@ class VoiceChatService:
         self.opencc = OpenCC('s2twp')
 
         self.llm_model: str = load_config()["llm"]["model"]
+
+        # 記憶層服務初始化
+        db = MemoryDB()
+        embedding_service = EmbeddingService()
+        vector_store = VectorStore(embedding_service=embedding_service)
+        retrieval = RetrievalService(db=db, vector_store=vector_store)
+        self.tool_handler = ToolCallingHandler(retrieval_service=retrieval)
+        self.memory_writer = MemoryWriter(db=db, vector_store=vector_store, groq_client=self.groq_client)
+        self.forgetting_service = ForgettingService(db=db, vector_store=vector_store)
+        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._turn_count: int = 0
+        self._memory_write_interval: int = load_config()["memory"]["retrieval"]["write_interval"]
 
         try:
             self.stt_service = STTService()
@@ -166,6 +188,7 @@ class VoiceChatService:
                     break
                 self._handle_tool_calls(tool_calls_map)
 
+            self._turn_count += 1
             self._speak(full_response)
         except Exception as e:
             logger.error(f"generate_response 失敗: {e}")
@@ -279,16 +302,26 @@ class VoiceChatService:
         self.app_state.tts_done = True   # TTS 播放完成
         logger.info("TTS 播放完成")
 
-    # ── Tool registry（記憶層整合後填入）────────────────────────────────────
+        # 背景記憶寫入（每 write_interval 輪觸發一次，不阻塞主流程）
+        if self._turn_count % self._memory_write_interval == 0:
+            turns = self.memory_cache.get_recent_turns(self._memory_write_interval)
+            if turns:
+                self._executor.submit(self.memory_writer.write, turns)
+
+    # ── Tool calling ─────────────────────────────────────────────────────────
 
     def _get_tools(self) -> list | None:
-        """回傳 Groq tool definitions。記憶層整合後在此加入 search_memory 等工具。"""
-        return None
+        """回傳 Groq tool definitions（SearchMemory）。"""
+        return get_tools()
 
     def _execute_tool(self, name: str, arguments_json: str) -> str:
-        """執行 tool call 並回傳結果字串。記憶層整合後實作。"""
-        logger.warning(f"_execute_tool: 未實作的 tool '{name}'")
-        return f"[Tool '{name}' 尚未實作]"
+        """解析 tool arguments JSON 並執行，回傳結果字串。"""
+        try:
+            args = json.loads(arguments_json)
+        except Exception as e:
+            logger.warning(f"_execute_tool: 無法解析 arguments JSON：{e}")
+            return f"[Tool '{name}' 請求格式錯誤]"
+        return self.tool_handler.handle(name, args)
 
     def get_status(self) -> dict:
         """獲取當前處理狀態。"""
