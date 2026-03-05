@@ -9,13 +9,13 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
-from groq import Groq
+from openai import OpenAI
 from dotenv import load_dotenv
 from opencc import OpenCC
 
 from services.audio_processing.stt_service import STTService
 from services.audio_processing.silero_vad_service import SileroVADService
-from services.audio_processing.gpt_sovits_service import GPTSoVITSV2Client
+from services.tts.tts_factory import create_tts_client
 from services.visual.vmm_service import VMMController
 from services.visual.avatar_controller import AvatarController
 from services.memory.memory_cache import MemoryCache
@@ -25,8 +25,9 @@ from services.memory.vector_store import VectorStore
 from services.memory.retrieval import RetrievalService
 from services.memory.memory_writer import MemoryWriter
 from services.memory.forgetting import ForgettingService
-from services.tools import get_tools
-from services.tool_calling_handler import ToolCallingHandler
+from services.llm.tools import get_tools
+from services.llm.tool_calling_handler import ToolCallingHandler
+from services.llm.llm_factory import create_llm_client
 from config import load_config
 
 # 載入環境變數
@@ -56,16 +57,19 @@ class VoiceChatService:
         self.app_state = AppState()
 
         self.vad_service = SileroVADService()
-        self.groq_client = Groq()
 
-        self.tts_client = GPTSoVITSV2Client()
+        cfg = load_config()
+        self.llm_client: OpenAI = create_llm_client(cfg["llm"])
+        self.tts_volume: float = cfg["tts"]["playback_volume"]
+        self.tts_client = create_tts_client(cfg["tts"])
+
         self.vmm_service = VMMController()
         self.avatar_service = AvatarController(self.tts_client, self.vmm_service)
 
         self.memory_cache = MemoryCache()
         self.opencc = OpenCC('s2twp')
 
-        self.llm_model: str = load_config()["llm"]["model"]
+        self.llm_model: str = cfg["llm"]["model"]
 
         # 記憶層服務初始化
         db = MemoryDB()
@@ -73,11 +77,11 @@ class VoiceChatService:
         vector_store = VectorStore(embedding_service=embedding_service)
         retrieval = RetrievalService(db=db, vector_store=vector_store)
         self.tool_handler = ToolCallingHandler(retrieval_service=retrieval)
-        self.memory_writer = MemoryWriter(db=db, vector_store=vector_store, groq_client=self.groq_client)
+        self.memory_writer = MemoryWriter(db=db, vector_store=vector_store, llm_client=self.llm_client)
         self.forgetting_service = ForgettingService(db=db, vector_store=vector_store)
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._turn_count: int = 0
-        self._memory_write_interval: int = load_config()["memory"]["retrieval"]["write_interval"]
+        self._memory_write_interval: int = cfg["memory"]["retrieval"]["write_interval"]
 
         try:
             self.stt_service = STTService()
@@ -221,7 +225,7 @@ class VoiceChatService:
         if tools:
             create_kwargs["tools"] = tools
 
-        stream = self.groq_client.chat.completions.create(**create_kwargs)
+        stream = self.llm_client.chat.completions.create(**create_kwargs)
 
         full_response = ""
         tool_calls_map: dict[int, dict] = {}
@@ -297,8 +301,7 @@ class VoiceChatService:
         logger.info(f"AI 回應已生成完成: {self.app_state.response}")
 
         self.app_state.tts_done = False  # TTS 開始播放
-        tts_response = self.tts_client.generate_stream(text=clean_text, language="zh")
-        self.avatar_service.perform(tts_response, volume=0.03, emote=emote)
+        self.avatar_service.perform(clean_text, volume=self.tts_volume, emote=emote)
         self.app_state.tts_done = True   # TTS 播放完成
         logger.info("TTS 播放完成")
 
@@ -311,7 +314,7 @@ class VoiceChatService:
     # ── Tool calling ─────────────────────────────────────────────────────────
 
     def _get_tools(self) -> list | None:
-        """回傳 Groq tool definitions（SearchMemory）。"""
+        """回傳 tool definitions（SearchMemory）。"""
         return get_tools()
 
     def _execute_tool(self, name: str, arguments_json: str) -> str:
@@ -332,6 +335,3 @@ class VoiceChatService:
             "error": self.app_state.error,
             "tts_done": self.app_state.tts_done,
         }
-
-
-

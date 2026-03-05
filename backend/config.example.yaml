@@ -11,17 +11,35 @@ kws:
     - "Another wake word model name here"
 
 tts:
-  # GPT-SoVITS API server 的位址與端口
-  host: "localhost"
-  port: 9880
-  sample_rate: 32000  # V2: 32000, V3/V4: 24000 or 48000
-  # GPT-SoVITS 參考音檔的絕對路徑，例如 "C:/path/to/your/voice.wav"
-  voice: ""
-  # 參考音檔對應的文字內容
-  prompt_text: "Your prompt text here"
-  prompt_lang: "zh"
-  streaming_mode: 2
-  batch_size: 1
+  # TTS 服務提供者：gptsovits（本地 voice cloning）/ edge_tts（雲端輕量，無需額外安裝）
+  provider: "edge_tts"
+  # pyaudio 播放音量乘數（0.0-2.0）；數值越小聲音越小
+  playback_volume: 0.03
+
+  # ── GPT-SoVITS 設定（provider: gptsovits 時生效）────────────────────────
+  gptsovits:
+    # GPT-SoVITS API server 的位址與端口
+    host: "localhost"
+    port: 9880
+    sample_rate: 32000  # V2: 32000, V3/V4: 24000 or 48000
+    # GPT-SoVITS 參考音檔的絕對路徑，例如 "C:/path/to/your/voice.wav"
+    voice: ""
+    # 參考音檔對應的文字內容
+    prompt_text: "Your prompt text here"
+    prompt_lang: "zh"
+    streaming_mode: 2
+    batch_size: 1
+    language: "zh"    # TTS 語言：zh / en / ja
+
+  # ── edge-tts 設定（provider: edge_tts 時生效）───────────────────────────
+  edge_tts:
+    # 可用中文語音：
+    # zh-TW: HsiaoChenNeural(F) / YunJheNeural(M) / HsiaoYuNeural(F)
+    # zh-CN: XiaoxiaoNeural(F) / YunxiNeural(M) / XiaoyiNeural(F) / YunyangNeural(M-新聞)
+    # zh-HK: HiuMaanNeural(F) / HiuGaaiNeural(F) / WanLungNeural(M)
+    voice: "zh-TW-HsiaoChenNeural"
+    rate: "+0%"       # 語速調整，如 +10% / -5%
+    volume: "+0%"     # 音量調整（edge-tts 服務層，與 playback_volume 分開）
 
 stt:
   # faster-whisper 模型大小：tiny / base / small / medium / large / turbo
@@ -56,6 +74,8 @@ vmm:
   #     Surprised - 驚訝
 
 llm:
+  # LLM 服務提供者：groq（雲端，需 GROQ_API_KEY）/ ollama（本地，需啟動 Ollama server）
+  provider: "groq"
   # Groq 支援的模型 ID，例如 "llama-3.1-8b-instant"
   model: "llama-3.1-8b-instant"
   # 自訂 AI 的角色設定與行為規則。

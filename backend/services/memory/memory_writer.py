@@ -1,7 +1,7 @@
 import json
 import logging
 
-from groq import Groq
+from openai import OpenAI
 
 from config import load_config
 from services.memory.sql import MemoryDB
@@ -20,11 +20,11 @@ class MemoryWriter:
         self,
         db: MemoryDB,
         vector_store: VectorStore,
-        groq_client: Groq,
+        llm_client: OpenAI,
     ):
         self.db = db
         self.vector_store = vector_store
-        self.groq_client = groq_client
+        self.llm_client = llm_client
         config = load_config()["memory"]["llm"]
         self.writer_model = config["writer_model"]
         self.writer_temperature = config["writer_temperature"]
@@ -46,7 +46,7 @@ class MemoryWriter:
         ]
         user_content = "\n\n".join(parts)
         try:
-            response = self.groq_client.chat.completions.create(
+            response = self.llm_client.chat.completions.create(
                 model=self.writer_model,
                 messages=[
                     {"role": "system", "content": self.writer_system_prompt},
@@ -58,7 +58,7 @@ class MemoryWriter:
             raw = response.choices[0].message.content
             data = json.loads(raw)
         except Exception as e:
-            logger.warning(f"analyze: Groq API error or JSON parse failed: {e}")
+            logger.warning(f"analyze: LLM API error or JSON parse failed: {e}")
             return None
 
         if not data.get("save"):

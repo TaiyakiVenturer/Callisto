@@ -28,8 +28,8 @@
 - **VAD**：Silero VAD (ONNX Runtime)
 - **KWS**：openWakeWord（預設使用開源的 `hey_jarvis` 模型；自訓練的 `hey_callisto` 模型未隨專案發布，可透過 [openWakeWord Colab](https://colab.research.google.com/drive/1q1oe2zOyZp7UsB3jJiQ1IFn8z5YfjwEb?usp=sharing) 自行訓練）
 - **STT**：faster-whisper
-- **LLM**：Groq API (llama-3.1-8b-instant)
-- **TTS**：GPT-SoVITS V2（本機部署）
+- **LLM**：openai SDK（支援 Groq / Ollama，`config.yaml` 切換）
+- **TTS**：GPT-SoVITS V2（本機部署）/ edge-tts（`config.yaml` 切換）
 - **VMM**：pythonosc → VMagicMirror → VRM 3D 模型控制
 - **長期記憶**：SQLite/FTS5 + ChromaDB + Ollama Embedding + RRF 混合搜尋
 - **設定**：集中式 `config.yaml`
@@ -107,10 +107,18 @@ pnpm dev
 Callisto/
 ├── backend/                    # 後端服務 (FastAPI + Python)
 │   ├── services/               # 核心服務模組
+│   │   ├── llm/                # LLM 層
+│   │   │   ├── llm_factory.py              # LLM client 工廠（Groq / Ollama 切換）
+│   │   │   ├── tools.py                    # Tool schema 定義（search_memory）
+│   │   │   └── tool_calling_handler.py     # Tool calling 迴圈處理（解析 / 執行 / 回傳）
+│   │   ├── tts/                # TTS 層
+│   │   │   ├── base_tts.py                 # BaseTTSClient ABC（統一介面）
+│   │   │   ├── tts_factory.py              # TTS client 工廠（gptsovits / edge_tts 切換）
+│   │   │   ├── gpt_sovits_service.py       # GPT-SoVITS V2 TTS 客戶端
+│   │   │   └── edge_tts_service.py         # edge-tts 客戶端（無硬體需求）
 │   │   ├── audio_processing/   # 音訊處理
 │   │   │   ├── silero_vad_service.py       # VAD 語音活動檢測（含 AGC）
 │   │   │   ├── kws_service.py              # 喚醒詞檢測 (openWakeWord)
-│   │   │   ├── gpt_sovits_service.py       # GPT-SoVITS V2 TTS 客戶端（含播放功能）
 │   │   │   └── stt_service.py              # 語音轉文字 (faster-whisper)
 │   │   ├── core/               # 核心邏輯
 │   │   │   └── voice_chat_service.py       # 語音對話主服務
@@ -125,11 +133,9 @@ Callisto/
 │   │   ├── monitoring/         # 監聽服務
 │   │   │   ├── audio_monitor_service.py    # VAD+KWS 協調服務
 │   │   │   └── voice_monitor_websocket_service.py  # WebSocket 音訊監聽
-│   │   ├── visual/             # 形象控制
-│   │   │   ├── vmm_service.py              # VMagicMirror OSC 控制（表情）
-│   │   │   └── avatar_controller.py        # 虛擬形象狀態控制器
-│   │   ├── tools.py                        # Groq tool schema 定義（search_memory）
-│   │   └── tool_calling_handler.py         # Tool calling 迴圈處理（解析 / 執行 / 回傳）
+│   │   └── visual/             # 形象控制
+│   │       ├── vmm_service.py              # VMagicMirror OSC 控制（表情）
+│   │       └── avatar_controller.py        # 虛擬形象狀態控制器
 │   ├── data/                   # 長期記憶資料（.gitignore 排除，勿上傳）
 │   │   ├── memory.db               # SQLite 記憶資料庫
 │   │   └── chroma_db/              # ChromaDB 向量索引
@@ -177,8 +183,8 @@ Callisto/
 - [x] **VAD 語音活動檢測** - Silero VAD (ONNX Runtime)
 - [x] **喚醒詞檢測** - openWakeWord（預設 `hey_jarvis`；自訓練的 `hey_callisto` 模型未隨專案發布）
 - [x] **語音轉文字 (STT)** - faster-whisper
-- [x] **大型語言模型 (LLM)** - Groq API
-- [x] **文字轉語音 (TTS)** - GPT-SoVITS V2 同步串流生成
+- [x] **大型語言模型 (LLM)** - openai SDK，支援 Groq / Ollama，`config.yaml` 切換 provider
+- [x] **文字轉語音 (TTS)** - GPT-SoVITS V2 / edge-tts，`config.yaml` 切換 provider
 - [x] **AGC 自動增益控制** - 整合於 Silero VAD，可設定目標 RMS 與噪音門限
 - [x] **虛擬形象控制** - pythonosc → VMagicMirror → VRM 3D 模型（表情 OSC）
 - [x] **長期記憶層** - FTS5 + ChromaDB 混合搜尋，tool calling 自動注入，背景寫入，遺忘週期
@@ -191,10 +197,13 @@ Callisto/
 - [x] **VectorStore** - ChromaDB 向量資料庫，以 `memory_id` 為主鍵與 SQLite 同步
 - [x] **EmbeddingService** - Ollama embedding 封裝，不可用時自動降級為純 FTS5
 - [x] **RetrievalService** - FTS5 + Vector RRF 混合搜尋，Graceful Degradation
-- [x] **MemoryWriter** - Groq LLM 判斷是否值得保存；topic 已存在則 upsert
+- [x] **MemoryWriter** - LLM 判斷是否值得保存；topic 已存在則 upsert
 - [x] **ForgettingService** - 指數衰減分數，自動壓縮 / 刪除低頻記憶
 - [x] **AudioMonitorService** - VAD+KWS 協調服務（環形 buffer、cooldown 管理）
-- [x] **GPTSoVITSV2Client** - TTS 客戶端，含同步串流播放（sounddevice）
+- [x] **BaseTTSClient** - TTS 抽象基底類別（ABC），統一 `get_chunk_generator` 介面
+- [x] **GPTSoVITSV2Client** - GPT-SoVITS V2 TTS 客戶端（串流生成，啟動時連線警告）
+- [x] **EdgeTTSClient** - edge-tts 客戶端（無需本機 GPU，asyncio→sync 橋接）
+- [x] **LLMFactory / TTSFactory** - PROVIDER_MAP 工廠模式，新增 provider 只需一行
 - [x] **VoiceMonitorWebSocketService** - Producer-Consumer 架構，支援 monitoring / vad_only / idle 三模式
 - [x] **VMMController** - VMagicMirror 表情 OSC over UDP 控制
 - [x] **FastAPI 端點** - `/api/chat/voice`, `/api/status`, `/`
@@ -245,4 +254,4 @@ Callisto/
 
 **專案名稱由來**：Callisto（木衛四），木星最外圈的大型衛星。
 
-**最後更新**：2026-03-05
+**最後更新**：2026-03-06

@@ -1,4 +1,3 @@
-import requests
 import time
 import numpy as np
 import pyaudio
@@ -6,15 +5,15 @@ from typing import Literal
 import logging
 import re
 
-from services.audio_processing.gpt_sovits_service import GPTSoVITSV2Client
-from .vmm_service import VMMController
+from services.tts.base_tts import BaseTTSClient
+from services.visual.vmm_service import VMMController
 
 # 設定日誌
 logger = logging.getLogger(__name__)
 
 class AvatarController:
     """負責控制 TTS 與 VMM 虛擬形象動作控制器類別"""
-    def __init__(self, tts_client: GPTSoVITSV2Client, vmm_service: VMMController):
+    def __init__(self, tts_client: BaseTTSClient, vmm_service: VMMController):
         self.tts_client = tts_client
         self.vmm_service = vmm_service
 
@@ -26,20 +25,20 @@ class AvatarController:
         if hasattr(self, 'p') and self.p is not None:
             self.p.terminate()
 
-    def perform(self, 
-            response: requests.Request, 
-            volume: float = 1.0, 
+    def perform(self,
+            text: str,
+            volume: float = 1.0,
             emote: Literal["Neutral", "Joy", "Angry", "Sorrow", "Fun", "Surprised", "Blink"] = "Neutral",
             level: float = 1.0
         ):
         """依照收到音訊, 播放 TTS 及控制 VMM 虛擬角色開口及表情"""
         cable_index = self.vmm_service.find_cable_index()
-        generator = self.tts_client.get_stream_generator(response, volume)
+        generator = self.tts_client.get_chunk_generator(text, volume)
 
         stream = self.p.open(
             format=pyaudio.paInt16,
             channels=1,
-            rate=32000,
+            rate=self.tts_client.sample_rate,
             output=True,
             output_device_index=cable_index
         )
@@ -71,7 +70,7 @@ class AvatarController:
             self.vmm_service.send_lip_sync(0.0)
 
         except Exception as e:
-            print("Error on perform:", e)
+            logger.warning(e)
         finally:
             # Clean up audio resources
             if stream is not None:
